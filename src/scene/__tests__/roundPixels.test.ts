@@ -9,7 +9,7 @@ import { Text } from '../text/Text';
 import { HTMLText } from '../text-html/HTMLText';
 import { Application } from '~/app';
 import { Rectangle } from '~/maths';
-import { Texture, WebGLRenderer } from '~/rendering';
+import { CanvasRenderer, ImageSource, Texture, WebGLRenderer } from '~/rendering';
 
 import type { GlGraphicsAdaptor } from '../graphics/gl/GlGraphicsAdaptor';
 
@@ -153,6 +153,55 @@ describe('Round Pixels', () =>
         const batchableTextHTMLData = renderer.renderPipes.htmlText['_getGpuText'](textHTML);
 
         expect(batchableTextHTMLData.roundPixels).toBe(1);
+    });
+
+    it('canvas renderer roundPixels includes anchor offset in position rounding', async () =>
+    {
+        const renderer = new CanvasRenderer();
+
+        await renderer.init({ width: 200, height: 200, resolution: 1 });
+
+        // Build a 100×100 texture so the anchor offset is a meaningful fraction.
+        const texCanvas = document.createElement('canvas');
+
+        texCanvas.width = 100;
+        texCanvas.height = 100;
+        const texture = new Texture({ source: new ImageSource({ resource: texCanvas }) });
+
+        // Sprite at (10.5, 20.5) with anchor (0.6, 0.6) and roundPixels enabled.
+        // bounds.minX = -0.6 * 100 = -60,  bounds.minY = -60
+        // Correct rounded X: (10.5 + (-60)) | 0 = (-49.5) | 0 = -49
+        // Correct rounded Y: (20.5 + (-60)) | 0 = (-39.5) | 0 = -39
+        const sprite = new Sprite({ texture, roundPixels: true });
+
+        sprite.anchor.set(0.6, 0.6);
+        sprite.position.set(10.5, 20.5);
+
+        const ctx = renderer.canvas.getContext('2d') as CanvasRenderingContext2D;
+        const setTransformSpy = jest.spyOn(ctx, 'setTransform');
+        const drawImageSpy = jest.spyOn(ctx, 'drawImage');
+
+        renderer.render({ container: sprite });
+
+        // setTransform must be called with integer e/f that fold in the anchor offset.
+        const lastSetTransformCall = setTransformSpy.mock.calls[setTransformSpy.mock.calls.length - 1];
+        const e = lastSetTransformCall[4] as number;
+        const f = lastSetTransformCall[5] as number;
+
+        expect(Number.isInteger(e)).toBe(true);
+        expect(Number.isInteger(f)).toBe(true);
+        expect(e).toBe(-49);
+        expect(f).toBe(-39);
+
+        // drawImage must be called at origin (0, 0) because the offset is baked into the transform.
+        const lastDrawImageCall = drawImageSpy.mock.calls[drawImageSpy.mock.calls.length - 1];
+        const drawX = lastDrawImageCall[5] as number;
+        const drawY = lastDrawImageCall[6] as number;
+
+        expect(drawX).toBe(0);
+        expect(drawY).toBe(0);
+
+        renderer.destroy();
     });
 
     it('renderer round pixels should override non batched items round pixels if false', async () =>

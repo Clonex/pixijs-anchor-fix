@@ -138,6 +138,9 @@ export class CanvasBatchAdaptor implements BatcherAdaptor
             // Only apply rotation transform when NOT using processed canvas (which handles rotation itself)
             const applyRotateTransform = rotate && !willUseProcessedCanvas;
 
+            let drawX = dx;
+            let drawY = dy;
+
             if (applyRotateTransform)
             {
                 CanvasBatchAdaptor._tempPatternMatrix.copyFrom(quad.transform);
@@ -155,19 +158,37 @@ export class CanvasBatchAdaptor implements BatcherAdaptor
                     undefined,
                     isFromCachedRenderGroup && isRootTarget
                 );
+                drawX = 0;
+                drawY = 0;
+            }
+            else if (quad.roundPixels === 1)
+            {
+                // Bake anchor offset into transform translation before rounding so the full
+                // screen position (mat.tx + mat.a*dx + mat.c*dy) is snapped to an integer,
+                // not just the world translation. Then draw at the origin.
+                CanvasBatchAdaptor._tempPatternMatrix.copyFrom(quad.transform);
+                const m = CanvasBatchAdaptor._tempPatternMatrix;
+
+                m.tx += (m.a * dx) + (m.c * dy);
+                m.ty += (m.b * dx) + (m.d * dy);
+                contextSystem.setContextTransform(
+                    m,
+                    true,
+                    undefined,
+                    isFromCachedRenderGroup && isRootTarget
+                );
+                drawX = 0;
+                drawY = 0;
             }
             else
             {
                 contextSystem.setContextTransform(
                     quad.transform,
-                    quad.roundPixels === 1,
+                    false,
                     undefined,
                     isFromCachedRenderGroup && isRootTarget
                 );
             }
-
-            const drawX = applyRotateTransform ? 0 : dx;
-            const drawY = applyRotateTransform ? 0 : dy;
             const drawW = dw;
             const drawH = dh;
 
